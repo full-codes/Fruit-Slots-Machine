@@ -1,0 +1,412 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Fruit Slots Machine</title>
+    <!-- Tailwind CSS CDN -->
+    <script src="https://cdn.tailwindcss.com"></script>
+    <style>
+        /* Custom Variables */
+        :root {
+            --slot-width: 100px;
+            --slot-height: 100px;
+            --slot-font-size: 48px;
+            --reel-stop-duration: 1500ms;
+        }
+
+        /* Machine Aesthetics */
+        .slot-machine {
+            background: linear-gradient(145deg, #a00000 0%, #600000 100%);
+            box-shadow: 0 15px 30px rgba(0, 0, 0, 0.7);
+            border: 12px solid #ffcc00; /* Gold frame */
+            border-radius: 25px;
+            position: relative;
+        }
+
+        /* Reel Container */
+        .reel {
+            width: var(--slot-width);
+            height: var(--slot-height);
+            overflow: hidden;
+            border: 5px solid #333;
+            border-radius: 10px;
+            background-color: #f0f0f0;
+            box-shadow: inset 0 0 15px rgba(0, 0, 0, 0.6);
+        }
+
+        /* Reel Content (The actual symbols moving) */
+        .reel-content {
+            will-change: transform;
+            position: relative;
+        }
+        
+        /* Individual Symbol */
+        .symbol {
+            height: var(--slot-height);
+            display: flex;
+            justify-content: center;
+            align-items: center;
+            font-size: var(--slot-font-size);
+            user-select: none;
+            line-height: var(--slot-height); /* Ensure symbols are perfectly centered */
+        }
+
+        /* Stopping Animation Transition */
+        .stopping {
+            /* Cubic-bezier for a bouncy, realistic stop effect */
+            transition: transform var(--reel-stop-duration) cubic-bezier(0.17, 0.67, 0.52, 1.25);
+        }
+
+        /* Winning Visual Feedback */
+        .winning-highlight {
+            animation: pulse 1s infinite alternate;
+            box-shadow: 0 0 30px #fff;
+        }
+
+        @keyframes pulse {
+            0% { transform: scale(1); opacity: 1; box-shadow: 0 0 15px #ff0; }
+            100% { transform: scale(1.05); opacity: 0.9; box-shadow: 0 0 30px #f90, 0 0 50px #f00; }
+        }
+
+        /* Responsive adjustments */
+        @media (max-width: 640px) {
+            :root {
+                --slot-width: 70px;
+                --slot-height: 70px;
+                --slot-font-size: 32px;
+            }
+            .slot-machine {
+                border-width: 8px;
+            }
+        }
+    </style>
+</head>
+<body class="bg-gray-900 text-white min-h-screen flex items-center justify-center p-4">
+
+    <div id="game-container" class="slot-machine w-full max-w-lg p-6 md:p-10 text-center">
+        <!-- Header & Score -->
+        <h1 class="text-3xl md:text-5xl font-extrabold text-yellow-300 mb-6 drop-shadow-lg tracking-wider">FRUIT FEVER SLOTS</h1>
+        
+        <div class="flex justify-between items-center mb-6 text-xl font-mono p-3 bg-red-900 rounded-lg border-2 border-yellow-400">
+            <div>Bank: <span id="bank-display" class="font-bold text-green-400">1000</span></div>
+            <div>Bet: <span id="bet-display" class="font-bold text-yellow-400">10</span></div>
+        </div>
+
+        <!-- Slot Reels Display -->
+        <div id="reels" class="flex justify-center gap-2 md:gap-4 mb-8">
+            <!-- Reel 0 -->
+            <div class="reel shadow-2xl">
+                <div class="reel-content" id="reel-content-0"></div>
+            </div>
+            <!-- Reel 1 -->
+            <div class="reel shadow-2xl">
+                <div class="reel-content" id="reel-content-1"></div>
+            </div>
+            <!-- Reel 2 -->
+            <div class="reel shadow-2xl">
+                <div class="reel-content" id="reel-content-2"></div>
+            </div>
+        </div>
+
+        <!-- Message Area -->
+        <div id="message-area" class="h-10 text-xl font-semibold text-white mb-6 p-2 rounded bg-red-700/70 border border-red-500 flex items-center justify-center">
+            Press SPIN to play!
+        </div>
+
+        <!-- Controls -->
+        <div class="flex flex-col gap-4">
+            <button id="spin-button" class="bg-green-500 hover:bg-green-600 text-white font-bold py-4 px-8 rounded-full shadow-lg text-2xl transition duration-150 transform hover:scale-105 disabled:opacity-50 disabled:cursor-not-allowed">
+                SPIN
+            </button>
+            
+            <div class="flex justify-center gap-4 text-sm">
+                <button id="bet-down" class="bg-red-500 hover:bg-red-600 p-2 rounded font-bold transition w-20 disabled:opacity-50">Bet -10</button>
+                <button id="bet-up" class="bg-blue-500 hover:bg-blue-600 p-2 rounded font-bold transition w-20 disabled:opacity-50">Bet +10</button>
+            </div>
+
+            <button id="mute-button" class="absolute top-4 right-4 bg-gray-700 p-2 rounded-full text-xs opacity-70 hover:opacity-100 transition">
+                🔇 Sound Off
+            </button>
+        </div>
+
+        <!-- Game Over Modal -->
+        <div id="game-over-modal" class="hidden absolute inset-0 bg-black bg-opacity-90 flex flex-col items-center justify-center p-8 rounded-xl z-50">
+            <h2 class="text-6xl font-extrabold text-red-500 mb-4 animate-pulse">GAME OVER</h2>
+            <p class="text-2xl mb-8">Your bank ran out!</p>
+            <button id="restart-button" class="bg-yellow-500 hover:bg-yellow-600 text-gray-900 font-bold py-3 px-6 rounded-full text-xl shadow-xl transition transform hover:scale-110">
+                Play Again (Reset Bank)
+            </button>
+        </div>
+    </div>
+
+<script>
+    const SYMBOLS = ['🍒', '🍋', '🍊', '🔔', '💎'];
+    const PAYOUTS = { '🍒': 100, '🍋': 150, '🍊': 200, '🔔': 500, '💎': 1000 };
+    const REEL_COUNT = 3;
+    const INITIAL_BANK = 1000;
+    const MIN_BET = 10;
+    const BET_STEP = 10;
+
+    let gameState = {
+        bank: INITIAL_BANK,
+        bet: MIN_BET,
+        isSpinning: false,
+        results: [0, 0, 0] // Index of the symbol landed on
+    };
+
+    let audioContext;
+    let isMuted = true;
+    let reelElements = [];
+    let reelHeight = 100; // Default, updated on init
+
+    // --- Utility Functions ---
+
+    function getReelHeight() {
+        // Calculate the actual symbol/reel height based on current CSS variables
+        const rootStyle = getComputedStyle(document.documentElement);
+        reelHeight = parseFloat(rootStyle.getPropertyValue('--slot-height').replace('px', ''));
+    }
+
+    function updateUI() {
+        document.getElementById('bank-display').textContent = gameState.bank;
+        document.getElementById('bet-display').textContent = gameState.bet;
+        const spinButton = document.getElementById('spin-button');
+
+        // Check if betting controls should be disabled
+        document.getElementById('bet-down').disabled = gameState.bet <= MIN_BET || gameState.isSpinning;
+        document.getElementById('bet-up').disabled = gameState.bet >= gameState.bank || gameState.isSpinning;
+
+        spinButton.disabled = gameState.isSpinning || gameState.bank < gameState.bet;
+        
+        // Game Over check
+        if (gameState.bank < MIN_BET && !gameState.isSpinning) {
+            document.getElementById('game-over-modal').classList.remove('hidden');
+        } else {
+            document.getElementById('game-over-modal').classList.add('hidden');
+        }
+    }
+
+    function updateMessage(msg, isWin = false) {
+        const msgArea = document.getElementById('message-area');
+        msgArea.textContent = msg;
+        msgArea.classList.toggle('bg-green-700/70', isWin);
+        msgArea.classList.toggle('border-green-500', isWin);
+        msgArea.classList.toggle('bg-red-700/70', !isWin);
+        msgArea.classList.toggle('border-red-500', !isWin);
+    }
+
+    function checkWin(results) {
+        const symbolsLanded = results.map(i => SYMBOLS[i]);
+        const [s1, s2, s3] = symbolsLanded;
+
+        // Check for three matching symbols
+        if (s1 === s2 && s2 === s3) {
+            // Scale payout by current bet amount relative to the base bet (10)
+            let payout = PAYOUTS[s1] * (gameState.bet / MIN_BET); 
+            return Math.floor(payout);
+        }
+        
+        // No match
+        return 0;
+    }
+
+    // --- Slot Machine Logic ---
+
+    function setupInitialReels() {
+        reelElements = Array.from({ length: REEL_COUNT }, (_, i) => document.getElementById(`reel-content-${i}`));
+        
+        reelElements.forEach((reel, index) => {
+            // Initialize reels to show the first symbol
+            reel.innerHTML = `<div class="symbol">${SYMBOLS[0]}</div>`;
+            reel.style.transform = 'translateY(0)';
+            reel.classList.remove('stopping', 'winning-highlight');
+        });
+    }
+
+    function startSpin() {
+        if (gameState.isSpinning || gameState.bank < gameState.bet) return;
+
+        gameState.isSpinning = true;
+        gameState.bank -= gameState.bet;
+        updateUI();
+        updateMessage('Good luck!');
+        playSound('startSpin');
+
+        reelElements.forEach(reel => {
+            reel.classList.remove('stopping', 'winning-highlight');
+            // Start rapid symbol cycling immediately
+            reel.spinInterval = setInterval(() => {
+                const randomIndex = Math.floor(Math.random() * SYMBOLS.length);
+                reel.innerHTML = `<div class="symbol">${SYMBOLS[randomIndex]}</div>`;
+            }, 50); 
+        });
+
+        // Stagger the stops (1.0s, 1.5s, 2.0s)
+        for (let i = 0; i < REEL_COUNT; i++) {
+            setTimeout(() => stopReel(i, reelElements[i]), 1000 + i * 500);
+        }
+    }
+
+    function stopReel(index, reelElement) {
+        clearInterval(reelElement.spinInterval);
+        
+        // 1. Determine the final result randomly
+        const finalIndex = Math.floor(Math.random() * SYMBOLS.length);
+        gameState.results[index] = finalIndex;
+        
+        // 2. Prepare symbols for the stopping animation (need padding above the final symbol)
+        const overshootSymbols = 4; // Number of symbols shown above the final result
+        const symbolsToShow = [];
+        
+        for (let i = overshootSymbols; i >= 0; i--) {
+            // Cycle through symbols to place the target symbol at the bottom of the list
+            const idx = (finalIndex + i) % SYMBOLS.length;
+            symbolsToShow.push(`<div class="symbol">${SYMBOLS[idx]}</div>`);
+        }
+
+        reelElement.innerHTML = symbolsToShow.join('');
+
+        // 3. Calculate target Y position
+        // If overshootSymbols is 4, the target index (0, the final symbol) is 4 positions down.
+        const targetY = -(overshootSymbols * reelHeight); 
+
+        // 4. Apply smooth stopping transition
+        reelElement.classList.add('stopping');
+        reelElement.style.transform = `translateY(${targetY}px)`;
+        
+        playSound('reelStop');
+
+        if (index === REEL_COUNT - 1) {
+            // Wait for the longest stop duration plus a small buffer
+            setTimeout(processResults, 2000); 
+        }
+    }
+
+    function processResults() {
+        gameState.isSpinning = false;
+        
+        const winnings = checkWin(gameState.results);
+        
+        if (winnings > 0) {
+            gameState.bank += winnings;
+            updateMessage(`JACKPOT! Won ${winnings}!`, true);
+            playSound('win');
+            
+            // Highlight winning reels
+            document.querySelectorAll('.reel').forEach(r => r.classList.add('winning-highlight'));
+        } else {
+            updateMessage('No luck this time.');
+            playSound('lose');
+        }
+        
+        updateUI();
+    }
+    
+    // --- Audio Implementation (Web Audio API) ---
+
+    function setupAudio() {
+        try {
+            audioContext = new (window.AudioContext || window.webkitAudioContext)();
+        } catch (e) {
+            console.warn('Web Audio API not supported.');
+            isMuted = true;
+        }
+    }
+
+    function playSound(type) {
+        if (isMuted || !audioContext) return;
+
+        const oscillator = audioContext.createOscillator();
+        const gainNode = audioContext.createGain();
+
+        oscillator.connect(gainNode);
+        gainNode.connect(audioContext.destination);
+
+        switch (type) {
+            case 'startSpin':
+                oscillator.type = 'sawtooth';
+                oscillator.frequency.setValueAtTime(440, audioContext.currentTime);
+                gainNode.gain.setValueAtTime(0.1, audioContext.currentTime);
+                oscillator.start();
+                gainNode.gain.exponentialRampToValueAtTime(0.001, audioContext.currentTime + 1.5);
+                oscillator.stop(audioContext.currentTime + 1.5);
+                break;
+            case 'reelStop':
+                oscillator.type = 'sine';
+                oscillator.frequency.setValueAtTime(200 + Math.random() * 50, audioContext.currentTime);
+                gainNode.gain.setValueAtTime(0.2, audioContext.currentTime);
+                oscillator.start();
+                gainNode.gain.exponentialRampToValueAtTime(0.001, audioContext.currentTime + 0.1);
+                oscillator.stop(audioContext.currentTime + 0.1);
+                break;
+            case 'win':
+                oscillator.type = 'square';
+                oscillator.frequency.setValueAtTime(880, audioContext.currentTime); 
+                oscillator.frequency.linearRampToValueAtTime(1320, audioContext.currentTime + 0.2);
+                gainNode.gain.setValueAtTime(0.5, audioContext.currentTime);
+                oscillator.start();
+                gainNode.gain.exponentialRampToValueAtTime(0.001, audioContext.currentTime + 1.5);
+                oscillator.stop(audioContext.currentTime + 1.5);
+                break;
+            case 'lose':
+                oscillator.type = 'triangle';
+                oscillator.frequency.setValueAtTime(120, audioContext.currentTime); 
+                gainNode.gain.setValueAtTime(0.2, audioContext.currentTime);
+                oscillator.start();
+                gainNode.gain.exponentialRampToValueAtTime(0.001, audioContext.currentTime + 0.3);
+                oscillator.stop(audioContext.currentTime + 0.3);
+                break;
+        }
+    }
+
+    function toggleMute() {
+        // Ensure audio context is initialized on first user interaction
+        if (!audioContext) {
+            setupAudio();
+        }
+        isMuted = !isMuted;
+        const button = document.getElementById('mute-button');
+        button.innerText = isMuted ? '🔇 Sound Off' : '🔊 Sound On';
+    }
+
+    // --- Initialization and Event Listeners ---
+
+    function initGame() {
+        getReelHeight(); // Set initial reel dimensions
+        setupInitialReels();
+        updateUI();
+
+        document.getElementById('spin-button').addEventListener('click', startSpin);
+        
+        document.getElementById('bet-up').addEventListener('click', () => {
+            if (!gameState.isSpinning && gameState.bank >= gameState.bet + BET_STEP) {
+                gameState.bet += BET_STEP;
+                updateUI();
+            }
+        });
+        
+        document.getElementById('bet-down').addEventListener('click', () => {
+            if (!gameState.isSpinning && gameState.bet > MIN_BET) {
+                gameState.bet -= BET_STEP;
+                updateUI();
+            }
+        });
+
+        document.getElementById('restart-button').addEventListener('click', () => {
+            gameState.bank = INITIAL_BANK;
+            gameState.bet = MIN_BET;
+            updateMessage('Bank reset. Ready to play!');
+            setupInitialReels();
+            updateUI();
+        });
+
+        document.getElementById('mute-button').addEventListener('click', toggleMute);
+    }
+
+    window.onload = initGame;
+    window.onresize = getReelHeight; // Update dimensions on resize for responsiveness
+
+</script>
+</body>
+</html>
